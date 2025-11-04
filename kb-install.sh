@@ -31,14 +31,12 @@ if ! command -v docker &> /dev/null; then
 fi
 echo -e "${GREEN}[✓]${NC} Docker найден"
 
-# Проверка Docker Compose
 if ! command -v docker compose &> /dev/null; then
     echo -e "${RED}[✗]${NC} Docker Compose не установлен!"
     exit 1
 fi
 echo -e "${GREEN}[✓]${NC} Docker Compose найден"
 
-# Проверка Traefik
 if ! docker network ls 2>/dev/null | grep -q "proxy"; then
     echo -e "${RED}[✗]${NC} Traefik сеть 'proxy' не найдена!"
     exit 1
@@ -47,35 +45,32 @@ echo -e "${GREEN}[✓]${NC} Traefik найден"
 
 echo ""
 
-# Запрос доменов
-echo -e "${BLUE}Введите домены:${NC}"
-echo ""
+# Получение доменов из аргументов или интерактивно
+if [ $# -eq 3 ]; then
+    WORDPRESS_DOMAIN=$1
+    N8N_DOMAIN=$2
+    PMA_DOMAIN=$3
+    echo -e "${GREEN}[✓]${NC} Домены получены из аргументов"
+else
+    echo -e "${BLUE}Введите домены:${NC}"
+    echo ""
 
-# Явно запрашиваем домены с timeout
-exec < /dev/tty
+    echo -n "WordPress домен (например site.example.com): "
+    read -r WORDPRESS_DOMAIN
 
-echo -n "WordPress домен (site.example.com): "
-read WORDPRESS_DOMAIN < /dev/tty
+    echo -n "n8n домен (например n8n.example.com): "
+    read -r N8N_DOMAIN
 
-echo -n "n8n домен (n8n.example.com): "
-read N8N_DOMAIN < /dev/tty
-
-echo -n "phpMyAdmin домен (pma.example.com): "
-read PMA_DOMAIN < /dev/tty
+    echo -n "phpMyAdmin домен (например pma.example.com): "
+    read -r PMA_DOMAIN
+fi
 
 # Проверка что домены не пустые
-if [ -z "$WORDPRESS_DOMAIN" ]; then
-    echo -e "${RED}[✗]${NC} Домен WordPress не может быть пустым!"
-    exit 1
-fi
-
-if [ -z "$N8N_DOMAIN" ]; then
-    echo -e "${RED}[✗]${NC} Домен n8n не может быть пустым!"
-    exit 1
-fi
-
-if [ -z "$PMA_DOMAIN" ]; then
-    echo -e "${RED}[✗]${NC} Домен phpMyAdmin не может быть пустым!"
+if [ -z "$WORDPRESS_DOMAIN" ] || [ -z "$N8N_DOMAIN" ] || [ -z "$PMA_DOMAIN" ]; then
+    echo -e "${RED}[✗]${NC} Ошибка: все домены должны быть заполнены!"
+    echo ""
+    echo "Используйте:"
+    echo "  ./$(basename "$0") site.example.com n8n.example.com pma.example.com"
     exit 1
 fi
 
@@ -83,14 +78,14 @@ echo -e "${GREEN}[✓]${NC} Домены сохранены"
 echo ""
 
 # Создание папки
-mkdir -p kb
-cd kb
-
-# Создание структуры
 echo -e "${BLUE}[ℹ]${NC} Создание структуры..."
+mkdir -p kb
+cd kb || exit 1
+
 mkdir -p volumes/mariadb1 volumes/mariadb2 volumes/postgresql volumes/redis
 mkdir -p volumes/n8n1 volumes/n8n2 volumes/n8n3 volumes/wordpress
 mkdir -p config/sql
+
 echo -e "${GREEN}[✓]${NC} Структура создана"
 
 # Генерация паролей
@@ -100,6 +95,7 @@ DB_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 PG_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 N8N_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 GALERA_CLUSTER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+PMA_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 echo -e "${GREEN}[✓]${NC} Пароли сгенерированы"
 
 # Создание .env файла
@@ -123,13 +119,13 @@ WORDPRESS_DOMAIN=${WORDPRESS_DOMAIN}
 N8N_DOMAIN=${N8N_DOMAIN}
 PMA_DOMAIN=${PMA_DOMAIN}
 
-PMA_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+PMA_PASSWORD=${PMA_PASSWORD}
 GENERIC_TIMEZONE=Europe/Moscow
 EOF
 echo -e "${GREEN}[✓]${NC} .env создан"
 
-# SQL скрипт
-echo -e "${BLUE}[ℹ]${NC} Создание SQL..."
+# SQL
+echo -e "${BLUE}[ℹ]${NC} SQL скрипт..."
 cat > config/sql/webhook-unique-constraint.sql << 'SQLEOF'
 CREATE TABLE IF NOT EXISTS webhook_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -157,7 +153,7 @@ SQLEOF
 echo -e "${GREEN}[✓]${NC} SQL создан"
 
 # Webhook Distributor
-echo -e "${BLUE}[ℹ]${NC} Создание webhook-distributor..."
+echo -e "${BLUE}[ℹ]${NC} Webhook distributor..."
 cat > webhook-distributor.js << 'JSEOF'
 const express = require('express');
 const axios = require('axios');
@@ -181,7 +177,7 @@ async function distributeWebhook(req, body) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${req.method} ${req.path}`);
 
-  const requests = n8nInstances.map((instance, index) => {
+  const requests = n8nInstances.map((instance) => {
     return axios({
       method: 'POST',
       url: `${instance}${req.path}`,
@@ -200,7 +196,8 @@ async function distributeWebhook(req, body) {
 
   const results = await Promise.all(requests);
   const successCount = results.filter(r => r.success && r.status === 200).length;
-  console.log(`✓ ${successCount}/${n8nInstances.length} получили\n`);
+  console.log(`✓ ${successCount}/${n8nInstances.length} получили
+`);
 
   return { results, successCount, totalInstances: n8nInstances.length };
 }
@@ -248,10 +245,10 @@ app.listen(PORT, () => {
   console.log(`Webhook Distributor запущен на порту ${PORT}`);
 });
 JSEOF
-echo -e "${GREEN}[✓]${NC} webhook-distributor создан"
+echo -e "${GREEN}[✓]${NC} Webhook distributor создан"
 
-# Docker Compose (упрощенный для безопасности)
-echo -e "${BLUE}[ℹ]${NC} Создание docker-compose.yml..."
+# Docker Compose
+echo -e "${BLUE}[ℹ]${NC} Docker compose..."
 cat > docker-compose.yml << 'COMPOSEEOF'
 version: '3.8'
 
@@ -414,7 +411,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n1.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
+      - "traefik.http.routers.n8n1.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
       - "traefik.http.routers.n8n1.entrypoints=websecure"
       - "traefik.http.routers.n8n1.tls=true"
       - "traefik.http.routers.n8n1.tls.certresolver=letsencrypt"
@@ -464,7 +461,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n2.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
+      - "traefik.http.routers.n8n2.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
       - "traefik.http.routers.n8n2.entrypoints=websecure"
       - "traefik.http.routers.n8n2.tls=true"
       - "traefik.http.routers.n8n2.tls.certresolver=letsencrypt"
@@ -514,7 +511,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n3.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
+      - "traefik.http.routers.n8n3.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
       - "traefik.http.routers.n8n3.entrypoints=websecure"
       - "traefik.http.routers.n8n3.tls=true"
       - "traefik.http.routers.n8n3.tls.certresolver=letsencrypt"
@@ -546,7 +543,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.wordpress.rule=Host(`${WORDPRESS_DOMAIN}`)"
+      - "traefik.http.routers.wordpress.rule=Host(\`${WORDPRESS_DOMAIN}\`)"
       - "traefik.http.routers.wordpress.entrypoints=websecure"
       - "traefik.http.routers.wordpress.tls=true"
       - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
@@ -578,7 +575,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.phpmyadmin.rule=Host(`${PMA_DOMAIN}`)"
+      - "traefik.http.routers.phpmyadmin.rule=Host(\`${PMA_DOMAIN}\`)"
       - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
       - "traefik.http.routers.phpmyadmin.tls=true"
       - "traefik.http.routers.phpmyadmin.tls.certresolver=letsencrypt"
@@ -586,8 +583,6 @@ services:
 COMPOSEEOF
 echo -e "${GREEN}[✓]${NC} docker-compose.yml создан"
 
-# README
-echo -e "${BLUE}[ℹ]${NC} Создание документации..."
 cat > README.md << 'READMEEOF'
 # KB Infrastructure
 
@@ -595,35 +590,26 @@ cat > README.md << 'READMEEOF'
 Остановка: docker compose down
 Статус: docker compose ps
 Логи: docker compose logs -f
-
-Вебхуки:
-  POST: curl -X POST https://n8n.example.com/webhook/path -d '{"key":"value"}'
-  GET: curl https://n8n.example.com/webhook/path?key=value
-
-phpMyAdmin: docker compose --profile admin up -d phpmyadmin
 READMEEOF
-echo -e "${GREEN}[✓]${NC} README создан"
 
-# Скрипт управления
-echo -e "${BLUE}[ℹ]${NC} Создание менеджера..."
 cat > manage.sh << 'MANAGEOF'
 #!/bin/bash
 while true; do
     clear
-    echo "1) Запуск  2) Остановка  3) Логи  4) Статус  5) phpMyAdmin  0) Выход"
+    echo "1) Запуск  2) Остановка  3) Логи  4) Статус  0) Выход"
     read -p "Выбор: " c
     case $c in
         1) docker compose up -d ;;
         2) docker compose down ;;
         3) docker compose logs -f ;;
         4) docker compose ps ;;
-        5) docker compose --profile admin up -d phpmyadmin ;;
         0) exit 0 ;;
     esac
 done
 MANAGEOF
 chmod +x manage.sh
-echo -e "${GREEN}[✓]${NC} Менеджер создан"
+
+echo -e "${GREEN}[✓]${NC} Все файлы созданы"
 
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════${NC}"
@@ -642,15 +628,12 @@ docker compose up -d
 
 sleep 3
 echo ""
-echo -e "${GREEN}Статус:${NC}"
 docker compose ps
 
-echo ""
-echo -e "${YELLOW}Примечание:${NC} Первый запуск может занять 2-3 минуты"
 echo ""
 echo -e "${BLUE}Вебхуки:${NC}"
 echo "  POST: curl -X POST https://${N8N_DOMAIN}/webhook/test -d '{"key":"value"}'"
 echo "  GET: curl https://${N8N_DOMAIN}/webhook/test?key=value"
 echo ""
-echo -e "${BLUE}Управление:${NC} ./manage.sh"
+echo -e "${BLUE}Управление: ./manage.sh${NC}"
 echo ""
