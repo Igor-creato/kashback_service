@@ -688,7 +688,7 @@ services:
 
   # ==================== WordPress ====================
   wordpress:
-    image: wordpress:latest
+    image: wordpress:php8.4-apache
     container_name: kb_wordpress
     restart: unless-stopped
     environment:
