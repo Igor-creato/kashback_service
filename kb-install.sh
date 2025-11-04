@@ -1,28 +1,11 @@
 #!/bin/bash
 
-# Цвета для вывода
+# Цвета
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Функция для логирования
-log() {
-  echo -e "${GREEN}[✓]${NC} $1"
-}
-
-log_info() {
-  echo -e "${BLUE}[ℹ]${NC} $1"
-}
-
-log_warn() {
-  echo -e "${YELLOW}[!]${NC} $1"
-}
-
-log_error() {
-  echo -e "${RED}[✗]${NC} $1"
-}
+NC='\033[0m'
 
 clear
 echo -e "${GREEN}"
@@ -31,96 +14,97 @@ cat << "EOF"
 ║                                                                  ║
 ║           KB Infrastructure - Полная установка                 ║
 ║                                                                  ║
-║  ✓ 2 MariaDB (Galera Cluster) - отказоустойчивость             ║
-║  ✓ 3 n8n экземпляра - параллельная обработка вебхуков          ║
-║  ✓ Webhook Distributor - гарантия доставки (GET+POST→POST)     ║
-║  ✓ PostgreSQL + Redis - для n8n                                 ║
-║  ✓ WordPress - CMS на MariaDB                                   ║
-║  ✓ phpMyAdmin - управление БД (по требованию)                  ║
+║  ✓ 2 MariaDB (Galera Cluster)                                   ║
+║  ✓ 3 n8n экземпляра                                             ║
+║  ✓ Webhook Distributor (GET + POST)                             ║
+║  ✓ PostgreSQL + Redis                                           ║
+║  ✓ WordPress + phpMyAdmin                                       ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 EOF
-echo -e "${NC}
-"
+echo -e "${NC}"
 
-# Проверка Docker и Docker Compose
-log_info "Проверка требуемых компонентов..."
-
+# Проверка Docker
 if ! command -v docker &> /dev/null; then
-    log_error "Docker не установлен!"
-    echo "Установите Docker: https://docs.docker.com/get-docker/"
+    echo -e "${RED}[✗]${NC} Docker не установлен!"
     exit 1
 fi
-log "Docker найден: $(docker --version)"
+echo -e "${GREEN}[✓]${NC} Docker найден"
 
-if ! command -v docker compose &> /dev/null && ! command -v docker-compose &> /dev/null; then
-    log_error "Docker Compose не установлен!"
+# Проверка Docker Compose
+if ! command -v docker compose &> /dev/null; then
+    echo -e "${RED}[✗]${NC} Docker Compose не установлен!"
     exit 1
 fi
-log "Docker Compose найден"
+echo -e "${GREEN}[✓]${NC} Docker Compose найден"
 
 # Проверка Traefik
-if ! docker network ls | grep -q "proxy"; then
-    log_error "Traefik сеть 'proxy' не найдена!"
-    echo "Убедитесь что Traefik запущен и работает в сети 'proxy'"
+if ! docker network ls 2>/dev/null | grep -q "proxy"; then
+    echo -e "${RED}[✗]${NC} Traefik сеть 'proxy' не найдена!"
     exit 1
 fi
-log "Traefik сеть 'proxy' найдена"
+echo -e "${GREEN}[✓]${NC} Traefik найден"
 
 echo ""
-log_info "Установка может занять 2-3 минуты..."
+
+# Запрос доменов
+echo -e "${BLUE}Введите домены:${NC}"
 echo ""
 
-# Создание основной директории
-INSTALL_DIR="kb"
-mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
+# Явно запрашиваем домены с timeout
+exec < /dev/tty
 
-# Создание структуры папок
-log_info "Создание структуры папок..."
-mkdir -p volumes/mariadb1
-mkdir -p volumes/mariadb2
-mkdir -p volumes/postgresql
-mkdir -p volumes/redis
-mkdir -p volumes/n8n1
-mkdir -p volumes/n8n2
-mkdir -p volumes/n8n3
-mkdir -p volumes/wordpress
+echo -n "WordPress домен (site.example.com): "
+read WORDPRESS_DOMAIN < /dev/tty
+
+echo -n "n8n домен (n8n.example.com): "
+read N8N_DOMAIN < /dev/tty
+
+echo -n "phpMyAdmin домен (pma.example.com): "
+read PMA_DOMAIN < /dev/tty
+
+# Проверка что домены не пустые
+if [ -z "$WORDPRESS_DOMAIN" ]; then
+    echo -e "${RED}[✗]${NC} Домен WordPress не может быть пустым!"
+    exit 1
+fi
+
+if [ -z "$N8N_DOMAIN" ]; then
+    echo -e "${RED}[✗]${NC} Домен n8n не может быть пустым!"
+    exit 1
+fi
+
+if [ -z "$PMA_DOMAIN" ]; then
+    echo -e "${RED}[✗]${NC} Домен phpMyAdmin не может быть пустым!"
+    exit 1
+fi
+
+echo -e "${GREEN}[✓]${NC} Домены сохранены"
+echo ""
+
+# Создание папки
+mkdir -p kb
+cd kb
+
+# Создание структуры
+echo -e "${BLUE}[ℹ]${NC} Создание структуры..."
+mkdir -p volumes/mariadb1 volumes/mariadb2 volumes/postgresql volumes/redis
+mkdir -p volumes/n8n1 volumes/n8n2 volumes/n8n3 volumes/wordpress
 mkdir -p config/sql
-log "Структура папок создана"
+echo -e "${GREEN}[✓]${NC} Структура создана"
 
 # Генерация паролей
-log_info "Генерация безопасных паролей..."
+echo -e "${BLUE}[ℹ]${NC} Генерация паролей..."
 DB_ROOT_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 DB_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-PMA_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 PG_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 N8N_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 GALERA_CLUSTER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-log "Пароли сгенерированы (длина: 25 символов)"
-
-# Запрос доменов
-echo ""
-log_info "Конфигурация доменов"
-echo ""
-
-read -p "Домен для WordPress (например, site.example.com): " WORDPRESS_DOMAIN
-read -p "Домен для n8n (например, n8n.example.com): " N8N_DOMAIN
-read -p "Домен для phpMyAdmin (например, pma.example.com): " PMA_DOMAIN
-
-# Валидация доменов
-if [ -z "$WORDPRESS_DOMAIN" ] || [ -z "$N8N_DOMAIN" ] || [ -z "$PMA_DOMAIN" ]; then
-    log_error "Домены не могут быть пустыми!"
-    exit 1
-fi
-
-log "Домены сохранены"
-echo ""
+echo -e "${GREEN}[✓]${NC} Пароли сгенерированы"
 
 # Создание .env файла
-log_info "Создание .env файла..."
+echo -e "${BLUE}[ℹ]${NC} Создание .env..."
 cat > .env << EOF
-# Database Configuration
 MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
 MARIADB_USER=wordpress
 MARIADB_PASSWORD=${DB_USER_PASSWORD}
@@ -128,30 +112,24 @@ MARIADB_DATABASE=wordpress
 GALERA_CLUSTER_NAME=kb_cluster
 GALERA_MARIABACKUP_PASSWORD=${GALERA_CLUSTER_PASSWORD}
 
-# PostgreSQL Configuration
 POSTGRES_USER=n8n
 POSTGRES_PASSWORD=${PG_PASSWORD}
 POSTGRES_DB=n8n
 
-# n8n Configuration
 N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
 N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_ENCRYPTION_KEY}
 
-# Domains
 WORDPRESS_DOMAIN=${WORDPRESS_DOMAIN}
 N8N_DOMAIN=${N8N_DOMAIN}
 PMA_DOMAIN=${PMA_DOMAIN}
 
-# phpMyAdmin
-PMA_PASSWORD=${PMA_PASSWORD}
-
-# Timezone
+PMA_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 GENERIC_TIMEZONE=Europe/Moscow
 EOF
-log ".env файл создан"
+echo -e "${GREEN}[✓]${NC} .env создан"
 
-# SQL скрипт для webhook_log
-log_info "Создание SQL скрипта для дедупликации вебхуков..."
+# SQL скрипт
+echo -e "${BLUE}[ℹ]${NC} Создание SQL..."
 cat > config/sql/webhook-unique-constraint.sql << 'SQLEOF'
 CREATE TABLE IF NOT EXISTS webhook_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -176,10 +154,10 @@ CREATE TABLE IF NOT EXISTS webhook_instance_log (
 
 CREATE INDEX idx_instance_webhook_id ON webhook_instance_log(webhook_id);
 SQLEOF
-log "SQL скрипт создан"
+echo -e "${GREEN}[✓]${NC} SQL создан"
 
-# Webhook Distributor скрипт
-log_info "Создание Webhook Distributor..."
+# Webhook Distributor
+echo -e "${BLUE}[ℹ]${NC} Создание webhook-distributor..."
 cat > webhook-distributor.js << 'JSEOF'
 const express = require('express');
 const axios = require('axios');
@@ -188,11 +166,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const n8nInstances = [
-  'http://n8n1:5678',
-  'http://n8n2:5678',
-  'http://n8n3:5678'
-];
+const n8nInstances = ['http://n8n1:5678', 'http://n8n2:5678', 'http://n8n3:5678'];
 
 function convertQueryToJson(queryString) {
   const params = new URLSearchParams(queryString);
@@ -205,93 +179,43 @@ function convertQueryToJson(queryString) {
 
 async function distributeWebhook(req, body) {
   const timestamp = new Date().toISOString();
-  const path = req.path;
-  const method = req.method;
-
-  console.log(`[${timestamp}] Получен ${method} запрос: ${path}`);
-  console.log(`Распределение на ${n8nInstances.length} экземпляров n8n`);
+  console.log(`[${timestamp}] ${req.method} ${req.path}`);
 
   const requests = n8nInstances.map((instance, index) => {
     return axios({
       method: 'POST',
-      url: `${instance}${path}`,
+      url: `${instance}${req.path}`,
       data: body,
       headers: {
         'Content-Type': 'application/json',
-        'X-Forwarded-For': req.ip,
-        'X-Original-Method': method,
-        'X-Webhook-Source': 'n8n-distributor'
+        'X-Original-Method': req.method,
+        'X-Webhook-Source': 'distributor'
       },
       timeout: 30000,
       validateStatus: () => true
     })
-      .then(response => ({
-        index,
-        instance,
-        status: response.status,
-        success: true
-      }))
-      .catch(error => ({
-        index,
-        instance,
-        error: error.message,
-        success: false
-      }));
+      .then(response => ({ instance, status: response.status, success: true }))
+      .catch(error => ({ instance, error: error.message, success: false }));
   });
 
   const results = await Promise.all(requests);
-
-  results.forEach(result => {
-    if (result.success) {
-      console.log(`✓ ${result.instance}: HTTP ${result.status}`);
-    } else {
-      console.log(`✗ ${result.instance}: ${result.error}`);
-    }
-  });
-
   const successCount = results.filter(r => r.success && r.status === 200).length;
-  console.log(`Статистика: ${successCount}/${n8nInstances.length} получили хук
-`);
+  console.log(`✓ ${successCount}/${n8nInstances.length} получили\n`);
 
-  return {
-    results,
-    successCount,
-    totalInstances: n8nInstances.length
-  };
+  return { results, successCount, totalInstances: n8nInstances.length };
 }
 
 app.post('*', async (req, res) => {
   try {
     const distribution = await distributeWebhook(req, req.body);
-
-    if (distribution.successCount >= 2) {
-      res.status(200).json({
-        message: 'Webhook распределен успешно',
-        method: 'POST',
-        distributed_to: distribution.successCount,
-        total_instances: distribution.totalInstances
-      });
-    } else if (distribution.successCount >= 1) {
-      res.status(200).json({
-        message: 'Webhook распределен с предупреждением',
-        method: 'POST',
-        distributed_to: distribution.successCount,
-        total_instances: distribution.totalInstances
-      });
-    } else {
-      res.status(503).json({
-        message: 'Ошибка распределения вебхука',
-        method: 'POST',
-        distributed_to: 0,
-        total_instances: distribution.totalInstances
-      });
-    }
-  } catch (error) {
-    console.error('Ошибка распределения:', error.message);
-    res.status(500).json({
-      message: 'Ошибка сервера при распределении',
-      error: error.message
+    const status = distribution.successCount >= 2 ? 200 : (distribution.successCount >= 1 ? 200 : 503);
+    res.status(status).json({
+      message: 'Webhook распределен',
+      distributed_to: distribution.successCount,
+      total: distribution.totalInstances
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -300,95 +224,36 @@ app.get('*', async (req, res) => {
     const body = {
       method: 'GET',
       query: convertQueryToJson(req.url.split('?')[1] || ''),
-      timestamp: new Date().toISOString(),
-      ip: req.ip
+      timestamp: new Date().toISOString()
     };
 
-    console.log(`[${new Date().toISOString()}] GET запрос преобразован в POST`);
-    console.log(`Параметры: ${JSON.stringify(body.query)}`);
-
     const distribution = await distributeWebhook(req, body);
-
-    if (distribution.successCount >= 2) {
-      res.status(200).json({
-        message: 'GET запрос преобразован в POST и распределен успешно',
-        method: 'GET→POST',
-        parameters: body.query,
-        distributed_to: distribution.successCount,
-        total_instances: distribution.totalInstances
-      });
-    } else if (distribution.successCount >= 1) {
-      res.status(200).json({
-        message: 'GET запрос преобразован в POST и распределен (частично)',
-        method: 'GET→POST',
-        parameters: body.query,
-        distributed_to: distribution.successCount,
-        total_instances: distribution.totalInstances
-      });
-    } else {
-      res.status(503).json({
-        message: 'Ошибка распределения GET запроса',
-        method: 'GET→POST',
-        parameters: body.query,
-        distributed_to: 0,
-        total_instances: distribution.totalInstances
-      });
-    }
-  } catch (error) {
-    console.error('Ошибка обработки GET:', error.message);
-    res.status(500).json({
-      message: 'Ошибка сервера при обработке GET',
-      error: error.message
+    const status = distribution.successCount >= 2 ? 200 : (distribution.successCount >= 1 ? 200 : 503);
+    res.status(status).json({
+      message: 'GET преобразован в POST',
+      parameters: body.query,
+      distributed_to: distribution.successCount
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/healthz', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    n8n_instances: n8nInstances.length,
-    features: ['POST webhook distribution', 'GET to POST conversion']
-  });
-});
-
-app.get('/', (req, res) => {
-  res.status(200).json({
-    service: 'n8n Webhook Distributor',
-    version: '2.0.0',
-    n8n_instances: n8nInstances,
-    features: [
-      'Параллельная отправка вебхуков на все 3 экземпляра n8n',
-      'Преобразование GET запросов в POST',
-      'Гарантия доставки (минимум 2 из 3 должны получить)',
-      'Health check endpoint'
-    ]
-  });
+  res.status(200).json({ status: 'healthy', instances: n8nInstances.length });
 });
 
 const PORT = process.env.PORT || 9000;
 app.listen(PORT, () => {
-  console.log(`
-╔════════════════════════════════════════════════════════════════╗
-║     n8n Webhook Distributor v2.0 запущен                      ║
-║                                                                ║
-║  Порт: ${PORT}                                                   ║
-║  Экземпляры n8n: ${n8nInstances.length}                                      ║
-║  Поддерживаемые методы: POST, GET (→ POST)                   ║
-║                                                                ║
-║  ✓ Все вебхуки отправлены на все 3 экземпляра одновременно  ║
-║  ✓ GET параметры преобразуются в POST body                   ║
-║  ✓ Гарантия доставки (минимум 2 из 3)                        ║
-║  ✓ Дедупликация на уровне БД                                 ║
-╚════════════════════════════════════════════════════════════════╝
-  `);
+  console.log(`Webhook Distributor запущен на порту ${PORT}`);
 });
 JSEOF
-log "Webhook Distributor создан"
+echo -e "${GREEN}[✓]${NC} webhook-distributor создан"
 
-# Docker Compose конфиг
-log_info "Создание docker-compose.yml..."
+# Docker Compose (упрощенный для безопасности)
+echo -e "${BLUE}[ℹ]${NC} Создание docker-compose.yml..."
 cat > docker-compose.yml << 'COMPOSEEOF'
+version: '3.8'
 
 networks:
   proxy:
@@ -549,7 +414,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n1.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n1.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
       - "traefik.http.routers.n8n1.entrypoints=websecure"
       - "traefik.http.routers.n8n1.tls=true"
       - "traefik.http.routers.n8n1.tls.certresolver=letsencrypt"
@@ -599,7 +464,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n2.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n2.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
       - "traefik.http.routers.n8n2.entrypoints=websecure"
       - "traefik.http.routers.n8n2.tls=true"
       - "traefik.http.routers.n8n2.tls.certresolver=letsencrypt"
@@ -649,7 +514,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n3.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n3.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
       - "traefik.http.routers.n8n3.entrypoints=websecure"
       - "traefik.http.routers.n8n3.tls=true"
       - "traefik.http.routers.n8n3.tls.certresolver=letsencrypt"
@@ -681,7 +546,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.wordpress.rule=Host(\`${WORDPRESS_DOMAIN}\`)"
+      - "traefik.http.routers.wordpress.rule=Host(`${WORDPRESS_DOMAIN}`)"
       - "traefik.http.routers.wordpress.entrypoints=websecure"
       - "traefik.http.routers.wordpress.tls=true"
       - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
@@ -713,166 +578,79 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.phpmyadmin.rule=Host(\`${PMA_DOMAIN}\`)"
+      - "traefik.http.routers.phpmyadmin.rule=Host(`${PMA_DOMAIN}`)"
       - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
       - "traefik.http.routers.phpmyadmin.tls=true"
       - "traefik.http.routers.phpmyadmin.tls.certresolver=letsencrypt"
       - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
 COMPOSEEOF
-log "docker-compose.yml создан"
+echo -e "${GREEN}[✓]${NC} docker-compose.yml создан"
 
-# Создание README
-log_info "Создание документации..."
+# README
+echo -e "${BLUE}[ℹ]${NC} Создание документации..."
 cat > README.md << 'READMEEOF'
-# KB Infrastructure - Полная система
+# KB Infrastructure
 
-## Компоненты
+Запуск: docker compose up -d
+Остановка: docker compose down
+Статус: docker compose ps
+Логи: docker compose logs -f
 
-- **MariaDB Galera Cluster** (2 узла) - отказоустойчивая БД
-- **n8n** (3 экземпляра) - обработка вебхуков параллельно
-- **Webhook Distributor** - гарантия доставки (GET→POST)
-- **PostgreSQL** - БД для n8n
-- **Redis** - очередь задач
-- **WordPress** - CMS на MariaDB
-- **phpMyAdmin** - управление БД (временно)
+Вебхуки:
+  POST: curl -X POST https://n8n.example.com/webhook/path -d '{"key":"value"}'
+  GET: curl https://n8n.example.com/webhook/path?key=value
 
-## Использование
-
-```bash
-docker compose up -d      # Запуск
-docker compose down       # Остановка
-docker compose ps        # Статус
-docker compose logs -f   # Логи
-```
-
-## Вебхуки
-
-```bash
-# POST
-curl -X POST https://n8n.example.com/webhook/path -d '{"key":"value"}'
-
-# GET (преобразуется в POST)
-curl https://n8n.example.com/webhook/path?key=value
-```
-
-## Health Check
-```bash
-curl https://n8n.example.com/healthz
-```
-
-## Управление phpMyAdmin
-```bash
-docker compose --profile admin up -d phpmyadmin
-docker compose stop phpmyadmin
-docker compose rm -f phpmyadmin
-```
-
-## Пароли в .env файле
+phpMyAdmin: docker compose --profile admin up -d phpmyadmin
 READMEEOF
-log "Документация создана"
+echo -e "${GREEN}[✓]${NC} README создан"
 
-# Создание скрипта управления
-log_info "Создание скрипта управления..."
+# Скрипт управления
+echo -e "${BLUE}[ℹ]${NC} Создание менеджера..."
 cat > manage.sh << 'MANAGEOF'
 #!/bin/bash
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-show_menu() {
-    clear
-    echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}    KB Infrastructure Manager${NC}"
-    echo -e "${BLUE}========================================${NC}"
-    echo ""
-    echo "1) Запустить все сервисы"
-    echo "2) Остановить все сервисы"
-    echo "3) Перезапустить"
-    echo "4) Статус"
-    echo "5) Логи"
-    echo "6) phpMyAdmin (запустить)"
-    echo "7) phpMyAdmin (остановить)"
-    echo "8) Galera статус"
-    echo "9) Пароли"
-    echo "0) Выход"
-    echo ""
-}
-
 while true; do
-    show_menu
-    read -p "Выбор: " choice
-
-    case $choice in
-        1) docker compose up -d && echo -e "${GREEN}Запущено!${NC}" && sleep 2 ;;
-        2) docker compose down && echo -e "${GREEN}Остановлено!${NC}" && sleep 2 ;;
-        3) docker compose restart && echo -e "${GREEN}Перезапущено!${NC}" && sleep 2 ;;
-        4) docker compose ps && read -p "Enter..." ;;
-        5) docker compose logs -f ;;
-        6) docker compose --profile admin up -d phpmyadmin && echo -e "${GREEN}phpMyAdmin запущен!${NC}" && sleep 2 ;;
-        7) docker compose stop phpmyadmin && docker compose rm -f phpmyadmin && echo -e "${GREEN}phpMyAdmin остановлен!${NC}" && sleep 2 ;;
-        8) echo "Galera статус:" && docker exec kb_mariadb1 mysql -uroot -p$(grep MARIADB_ROOT_PASSWORD .env | cut -d= -f2) -e "SHOW STATUS LIKE 'wsrep_cluster_size'; SHOW STATUS LIKE 'wsrep_local_state_comment';" && read -p "Enter..." ;;
-        9) echo "" && echo -e "${BLUE}Пароли:${NC}" && grep -E "PASSWORD|ENCRYPTION_KEY" .env && read -p "Enter..." ;;
-        0) echo -e "${GREEN}До встречи!${NC}" && exit 0 ;;
-        *) echo -e "${RED}Неверный выбор${NC}" && sleep 1 ;;
+    clear
+    echo "1) Запуск  2) Остановка  3) Логи  4) Статус  5) phpMyAdmin  0) Выход"
+    read -p "Выбор: " c
+    case $c in
+        1) docker compose up -d ;;
+        2) docker compose down ;;
+        3) docker compose logs -f ;;
+        4) docker compose ps ;;
+        5) docker compose --profile admin up -d phpmyadmin ;;
+        0) exit 0 ;;
     esac
 done
 MANAGEOF
 chmod +x manage.sh
-log "Скрипт управления создан"
-
-# Финальное сообщение
-echo ""
-echo -e "${GREEN}"
-cat << "EOF"
-╔══════════════════════════════════════════════════════════════════╗
-║                  ✓ УСТАНОВКА ЗАВЕРШЕНА!                         ║
-╚══════════════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}
-"
-
-log_info "Структура создана в папке: $(pwd)"
-log_info "Все данные хранятся в: $(pwd)/volumes/"
-log_info "Конфигурация в: $(pwd)/.env"
+echo -e "${GREEN}[✓]${NC} Менеджер создан"
 
 echo ""
-echo -e "${YELLOW}ВАЖНО!${NC} Сохраните файл ${YELLOW}.env${NC} в безопасном месте!"
+echo -e "${GREEN}═══════════════════════════════════════${NC}"
+echo -e "${GREEN}✓ УСТАНОВКА ЗАВЕРШЕНА!${NC}"
+echo -e "${GREEN}═══════════════════════════════════════${NC}"
 echo ""
 
-echo -e "${BLUE}Ваша система:${NC}"
+echo -e "${YELLOW}Ваша система:${NC}"
 echo "  WordPress:  https://${WORDPRESS_DOMAIN}"
 echo "  n8n:        https://${N8N_DOMAIN}"
-echo "  phpMyAdmin: https://${PMA_DOMAIN} (запускается через manage.sh)"
+echo "  phpMyAdmin: https://${PMA_DOMAIN}"
 echo ""
 
-log_info "ЗАПУСК КОНТЕЙНЕРОВ..."
-echo ""
-
-# Запуск контейнеров
+echo -e "${BLUE}Запуск контейнеров...${NC}"
 docker compose up -d
 
-echo ""
-log_info "Контейнеры запущены! Система готова к работе."
-echo ""
-
-echo -e "${BLUE}Проверка статуса:${NC}"
 sleep 3
+echo ""
+echo -e "${GREEN}Статус:${NC}"
 docker compose ps
 
 echo ""
-echo -e "${YELLOW}Первый запуск может занять 2-3 минуты для загрузки всех сервисов${NC}"
+echo -e "${YELLOW}Примечание:${NC} Первый запуск может занять 2-3 минуты"
 echo ""
-
 echo -e "${BLUE}Вебхуки:${NC}"
-echo "  POST: curl -X POST https://${N8N_DOMAIN}/webhook/path -d '{"data":"value"}'"
-echo "  GET:  curl https://${N8N_DOMAIN}/webhook/path?key=value"
+echo "  POST: curl -X POST https://${N8N_DOMAIN}/webhook/test -d '{"key":"value"}'"
+echo "  GET: curl https://${N8N_DOMAIN}/webhook/test?key=value"
 echo ""
-
-echo -e "${BLUE}Управление:${NC}"
-echo "  ./manage.sh                    (интерактивный менеджер)"
-echo "  docker compose logs -f         (логи всех сервисов)"
-echo "  docker compose ps              (статус сервисов)"
+echo -e "${BLUE}Управление:${NC} ./manage.sh"
 echo ""
