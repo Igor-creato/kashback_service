@@ -389,6 +389,7 @@ log "Webhook Distributor создан"
 # Docker Compose конфиг
 log_info "Создание docker-compose.yml..."
 cat > docker-compose.yml << 'COMPOSEEOF'
+version: '3.8'
 
 networks:
   proxy:
