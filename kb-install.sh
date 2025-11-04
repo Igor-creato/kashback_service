@@ -747,10 +747,6 @@ services:
       - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
 COMPOSEEOF
 log "docker-compose.yml создан"
-log "Запускаем контейнеры..."
-cd kb
-docker compose up -d
-log "Контейнеры запущены. Система готова к работе."
 
 # Readme файл
 log_info "Создание документации..."
@@ -916,6 +912,11 @@ done
 MANAGEOF
 chmod +x manage.sh
 log "Скрипт управления создан"
+
+log "Запускаем контейнеры..."
+cd kb
+docker compose up -d
+log "Контейнеры запущены. Система готова к работе."
 
 # Финальное сообщение
 echo ""
