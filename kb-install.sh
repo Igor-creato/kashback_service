@@ -247,9 +247,9 @@ app.listen(PORT, () => {
 JSEOF
 echo -e "${GREEN}[✓]${NC} Webhook distributor создан"
 
-# Docker Compose
+# Docker Compose - ИСПРАВЛЕННЫЙ СИНТАКСИС YAML
 echo -e "${BLUE}[ℹ]${NC} Docker compose..."
-cat > docker-compose.yml << 'COMPOSEEOF'
+cat > docker-compose.yml << EOF
 version: '3.8'
 
 networks:
@@ -273,7 +273,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.webhook.rule=Host(`${N8N_DOMAIN}`) && PathPrefix(`/webhook`)"
+      - "traefik.http.routers.webhook.rule=Host(\\`${N8N_DOMAIN}\\`) && PathPrefix(\\`/webhook\\`)"
       - "traefik.http.routers.webhook.entrypoints=websecure"
       - "traefik.http.routers.webhook.tls=true"
       - "traefik.http.routers.webhook.tls.certresolver=letsencrypt"
@@ -290,16 +290,16 @@ services:
     container_name: kb_mariadb1
     restart: unless-stopped
     environment:
-      - MARIADB_GALERA_CLUSTER_NAME=${GALERA_CLUSTER_NAME}
+      - MARIADB_GALERA_CLUSTER_NAME=kb_cluster
       - MARIADB_GALERA_CLUSTER_ADDRESS=gcomm://mariadb1,mariadb2
       - MARIADB_GALERA_NODE_NAME=mariadb1
       - MARIADB_GALERA_NODE_ADDRESS=mariadb1
       - MARIADB_GALERA_MARIABACKUP_USER=mariabackup
       - MARIADB_GALERA_MARIABACKUP_PASSWORD=${GALERA_MARIABACKUP_PASSWORD}
-      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
-      - MARIADB_USER=${MARIADB_USER}
-      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MARIADB_USER=wordpress
+      - MARIADB_PASSWORD=${DB_USER_PASSWORD}
+      - MARIADB_DATABASE=wordpress
     volumes:
       - ./volumes/mariadb1:/bitnami/mariadb
       - ./config/sql/webhook-unique-constraint.sql:/docker-entrypoint-initdb.d/webhook-unique-constraint.sql
@@ -317,13 +317,13 @@ services:
     container_name: kb_mariadb2
     restart: unless-stopped
     environment:
-      - MARIADB_GALERA_CLUSTER_NAME=${GALERA_CLUSTER_NAME}
+      - MARIADB_GALERA_CLUSTER_NAME=kb_cluster
       - MARIADB_GALERA_CLUSTER_ADDRESS=gcomm://mariadb1,mariadb2
       - MARIADB_GALERA_NODE_NAME=mariadb2
       - MARIADB_GALERA_NODE_ADDRESS=mariadb2
       - MARIADB_GALERA_MARIABACKUP_USER=mariabackup
       - MARIADB_GALERA_MARIABACKUP_PASSWORD=${GALERA_MARIABACKUP_PASSWORD}
-      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
       - MARIADB_GALERA_CLUSTER_BOOTSTRAP=no
     volumes:
       - ./volumes/mariadb2:/bitnami/mariadb
@@ -344,15 +344,15 @@ services:
     container_name: kb_postgresql
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=${PG_PASSWORD}
+      - POSTGRES_DB=n8n
     volumes:
       - ./volumes/postgresql:/var/lib/postgresql/data
     networks:
       - internal
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+      test: ['CMD-SHELL', 'pg_isready -U n8n']
       interval: 30s
       timeout: 10s
       retries: 5
@@ -382,15 +382,15 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - WEBHOOK_URL=https://${N8N_DOMAIN}/
-      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - GENERIC_TIMEZONE=Europe/Moscow
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_ENCRYPTION_KEY}
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgresql
       - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_USER=${POSTGRES_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=${PG_PASSWORD}
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=redis
       - QUEUE_BULL_REDIS_PORT=6379
@@ -411,7 +411,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n1.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n1.rule=Host(\\`${N8N_DOMAIN}\\`) && !PathPrefix(\\`/webhook\\`)"
       - "traefik.http.routers.n8n1.entrypoints=websecure"
       - "traefik.http.routers.n8n1.tls=true"
       - "traefik.http.routers.n8n1.tls.certresolver=letsencrypt"
@@ -432,15 +432,15 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - WEBHOOK_URL=https://${N8N_DOMAIN}/
-      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - GENERIC_TIMEZONE=Europe/Moscow
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_ENCRYPTION_KEY}
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgresql
       - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_USER=${POSTGRES_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=${PG_PASSWORD}
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=redis
       - QUEUE_BULL_REDIS_PORT=6379
@@ -461,7 +461,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n2.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n2.rule=Host(\\`${N8N_DOMAIN}\\`) && !PathPrefix(\\`/webhook\\`)"
       - "traefik.http.routers.n8n2.entrypoints=websecure"
       - "traefik.http.routers.n8n2.tls=true"
       - "traefik.http.routers.n8n2.tls.certresolver=letsencrypt"
@@ -482,15 +482,15 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - WEBHOOK_URL=https://${N8N_DOMAIN}/
-      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - GENERIC_TIMEZONE=Europe/Moscow
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_ENCRYPTION_KEY}
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgresql
       - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_USER=${POSTGRES_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=${PG_PASSWORD}
       - EXECUTIONS_MODE=queue
       - QUEUE_BULL_REDIS_HOST=redis
       - QUEUE_BULL_REDIS_PORT=6379
@@ -511,7 +511,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n3.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n3.rule=Host(\\`${N8N_DOMAIN}\\`) && !PathPrefix(\\`/webhook\\`)"
       - "traefik.http.routers.n8n3.entrypoints=websecure"
       - "traefik.http.routers.n8n3.tls=true"
       - "traefik.http.routers.n8n3.tls.certresolver=letsencrypt"
@@ -529,9 +529,9 @@ services:
     restart: unless-stopped
     environment:
       - WORDPRESS_DB_HOST=mariadb1:3306
-      - WORDPRESS_DB_USER=${MARIADB_USER}
-      - WORDPRESS_DB_PASSWORD=${MARIADB_PASSWORD}
-      - WORDPRESS_DB_NAME=${MARIADB_DATABASE}
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=${DB_USER_PASSWORD}
+      - WORDPRESS_DB_NAME=wordpress
     volumes:
       - ./volumes/wordpress:/var/www/html
     networks:
@@ -543,7 +543,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.wordpress.rule=Host(\`${WORDPRESS_DOMAIN}\`)"
+      - "traefik.http.routers.wordpress.rule=Host(\\`${WORDPRESS_DOMAIN}\\`)"
       - "traefik.http.routers.wordpress.entrypoints=websecure"
       - "traefik.http.routers.wordpress.tls=true"
       - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
@@ -565,7 +565,7 @@ services:
       - PMA_HOSTS=mariadb1,mariadb2
       - PMA_ARBITRARY=0
       - PMA_USER=root
-      - PMA_PASSWORD=${MARIADB_ROOT_PASSWORD}
+      - PMA_PASSWORD=${DB_ROOT_PASSWORD}
     networks:
       - internal
       - proxy
@@ -575,12 +575,12 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.phpmyadmin.rule=Host(\`${PMA_DOMAIN}\`)"
+      - "traefik.http.routers.phpmyadmin.rule=Host(\\`${PMA_DOMAIN}\\`)"
       - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
       - "traefik.http.routers.phpmyadmin.tls=true"
       - "traefik.http.routers.phpmyadmin.tls.certresolver=letsencrypt"
       - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
-COMPOSEEOF
+EOF
 echo -e "${GREEN}[✓]${NC} docker-compose.yml создан"
 
 cat > README.md << 'READMEEOF'
