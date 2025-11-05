@@ -337,11 +337,10 @@ app.listen(PORT, () => {
 });
 JSEOF
 echo -e "${GREEN}[✓]${NC} Webhook distributor создан"
-
 # Docker Compose - БЕЗ СЛОЖНОГО ЭКРАНИРОВАНИЯ
 echo -e "${BLUE}[ℹ]${NC} Docker compose..."
 cat > docker-compose.yml << 'COMPOSEYML'
-version: '3.8'
+
 
 networks:
   proxy:
@@ -377,7 +376,7 @@ services:
       start_period: 30s
 
   mariadb1:
-    image: bitnami/mariadb-galera:latest
+    image: bitnami/mariadb-galera:10.6
     container_name: kb_mariadb1
     restart: unless-stopped
     environment:
@@ -404,7 +403,7 @@ services:
       start_period: 60s
 
   mariadb2:
-    image: bitnami/mariadb-galera:latest
+    image: bitnami/mariadb-galera:10.6
     container_name: kb_mariadb2
     restart: unless-stopped
     environment:
@@ -431,7 +430,7 @@ services:
       start_period: 60s
 
   postgresql:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     container_name: kb_postgresql
     restart: unless-stopped
     environment:
@@ -465,7 +464,7 @@ services:
       retries: 5
 
   n8n1:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.45.0
     container_name: kb_n8n1
     restart: unless-stopped
     environment:
@@ -513,7 +512,7 @@ services:
       start_period: 60s
 
   n8n2:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.45.0
     container_name: kb_n8n2
     restart: unless-stopped
     environment:
@@ -561,7 +560,7 @@ services:
       start_period: 60s
 
   n8n3:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.45.0
     container_name: kb_n8n3
     restart: unless-stopped
     environment:
@@ -609,7 +608,7 @@ services:
       start_period: 60s
 
   wordpress:
-    image: wordpress:latest
+    image: wordpress:6.6-fpm-alpine
     container_name: kb_wordpress
     restart: unless-stopped
     environment:
@@ -653,7 +652,7 @@ services:
       start_period: 60s
 
   phpmyadmin:
-    image: phpmyadmin:latest
+    image: phpmyadmin:5.2.1-apache
     container_name: kb_phpmyadmin
     restart: "no"
     profiles:
