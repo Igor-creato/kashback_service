@@ -55,7 +55,7 @@ else
     echo -e "${BLUE}Введите домены:${NC}"
     echo ""
 
-    # Функция для безопасного ввода домена
+    # Функция для безопасного ввода домена с поддержкой curl | bash
     input_domain() {
         local prompt="$1"
         local var_name="$2"
@@ -63,8 +63,16 @@ else
         
         while [ -z "$value" ]; do
             echo -n "$prompt"
-            # Используем read с таймаутом и проверкой
-            if read -t 60 -r value 2>/dev/null; then
+            # Проверяем, запущен ли скрипт через pipe
+            if [ -t 0 ]; then
+                # Прямой запуск терминала
+                read -t 60 -r value 2>/dev/null
+            else
+                # Запуск через pipe, используем /dev/tty
+                read -t 60 -r value < /dev/tty 2>/dev/null
+            fi
+            
+            if [ $? -eq 0 ] && [ -n "$value" ]; then
                 # Удаляем пробелы в начале и конце
                 value=$(echo "$value" | xargs)
                 # Проверяем что значение не пустое
@@ -73,15 +81,27 @@ else
                 fi
             else
                 echo -e "${RED}[✗]${NC} Ошибка ввода или таймаут. Попробуйте снова."
+                value=""
             fi
         done
         
         eval "$var_name=\"$value\""
     }
 
-    input_domain "WordPress домен (например site.example.com): " "WORDPRESS_DOMAIN"
-    input_domain "n8n домен (например n8n.example.com): " "N8N_DOMAIN"
-    input_domain "phpMyAdmin домен (например pma.example.com): " "PMA_DOMAIN"
+    # Альтернативный метод через переменные окружения
+    if [ -z "$WORDPRESS_DOMAIN" ] || [ -z "$N8N_DOMAIN" ] || [ -z "$PMA_DOMAIN" ]; then
+        echo -e "${BLUE}[ℹ]${NC} Вы можете установить домены через переменные окружения:"
+        echo -e "${YELLOW}WORDPRESS_DOMAIN${NC}=site.example.com ${YELLOW}N8N_DOMAIN${NC}=n8n.example.com ${YELLOW}PMA_DOMAIN${NC}=pma.example.com kb-install.sh"
+        echo ""
+        echo -e "${BLUE}Введите домены интерактивно:${NC}"
+        echo ""
+
+        input_domain "WordPress домен (например site.example.com): " "WORDPRESS_DOMAIN"
+        input_domain "n8n домен (например n8n.example.com): " "N8N_DOMAIN"
+        input_domain "phpMyAdmin домен (например pma.example.com): " "PMA_DOMAIN"
+    else
+        echo -e "${GREEN}[✓]${NC} Домены получены из переменных окружения"
+    fi
 fi
 
 # Проверка что домены не пустые
