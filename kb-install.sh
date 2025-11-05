@@ -55,46 +55,51 @@ else
     echo -e "${BLUE}Введите домены:${NC}"
     echo ""
 
-    while [ -z "$WORDPRESS_DOMAIN" ]; do
-        echo -n "WordPress домен (например site.example.com): "
-        read -r WORDPRESS_DOMAIN
-        if [ -z "$WORDPRESS_DOMAIN" ]; then
-            echo -e "${RED}Домен не может быть пустым!${NC}"
-        fi
-    done
+    # Функция для безопасного ввода домена
+    input_domain() {
+        local prompt="$1"
+        local var_name="$2"
+        local value=""
+        
+        while [ -z "$value" ]; do
+            echo -n "$prompt"
+            # Используем read с таймаутом и проверкой
+            if read -t 60 -r value 2>/dev/null; then
+                # Удаляем пробелы в начале и конце
+                value=$(echo "$value" | xargs)
+                # Проверяем что значение не пустое
+                if [ -z "$value" ]; then
+                    echo -e "${RED}[✗]${NC} Значение не может быть пустым. Попробуйте снова."
+                fi
+            else
+                echo -e "${RED}[✗]${NC} Ошибка ввода или таймаут. Попробуйте снова."
+            fi
+        done
+        
+        eval "$var_name=\"$value\""
+    }
 
-    while [ -z "$N8N_DOMAIN" ]; do
-        echo -n "n8n домен (например n8n.example.com): "
-        read -r N8N_DOMAIN
-        if [ -z "$N8N_DOMAIN" ]; then
-            echo -e "${RED}Домен не может быть пустым!${NC}"
-        fi
-    done
-
-    while [ -z "$PMA_DOMAIN" ]; do
-        echo -n "phpMyAdmin домен (например pma.example.com): "
-        read -r PMA_DOMAIN
-        if [ -z "$PMA_DOMAIN" ]; then
-            echo -e "${RED}Домен не может быть пустым!${NC}"
-        fi
-    done
+    input_domain "WordPress домен (например site.example.com): " "WORDPRESS_DOMAIN"
+    input_domain "n8n домен (например n8n.example.com): " "N8N_DOMAIN"
+    input_domain "phpMyAdmin домен (например pma.example.com): " "PMA_DOMAIN"
 fi
+
+# Проверка что домены не пустые
+if [ -z "$WORDPRESS_DOMAIN" ] || [ -z "$N8N_DOMAIN" ] || [ -z "$PMA_DOMAIN" ]; then
+    echo -e "${RED}[✗]${NC} Ошибка: все домены должны быть заполнены!"
+    exit 1
+fi
+
+# Дополнительная проверка формата доменов
+for domain in "$WORDPRESS_DOMAIN" "$N8N_DOMAIN" "$PMA_DOMAIN"; do
+    if ! echo "$domain" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}$'; then
+        echo -e "${RED}[✗]${NC} Неверный формат домена: $domain"
+        exit 1
+    fi
+done
 
 echo -e "${GREEN}[✓]${NC} Домены сохранены"
 echo ""
-mkdir -p php-config
-cat > php-config/wordpress.ini <<'INI'
-file_uploads = On
-memory_limit = 256M
-upload_max_filesize = 64M
-post_max_size = 64M
-max_execution_time = 300
-max_input_vars = 3000
-max_file_uploads = 20
-INI
-
-echo -e "${GREEN}[✓]${NC} Конфигурация PHP создана"
-
 
 # Создание папки
 echo -e "${BLUE}[ℹ]${NC} Создание структуры..."
@@ -103,9 +108,50 @@ cd kb || exit 1
 
 mkdir -p volumes/mariadb1 volumes/mariadb2 volumes/postgresql volumes/redis
 mkdir -p volumes/n8n1 volumes/n8n2 volumes/n8n3 volumes/wordpress
-mkdir -p config/sql
+mkdir -p config/sql logs/php
 
 echo -e "${GREEN}[✓]${NC} Структура создана"
+
+mkdir -p php-config
+cat > php-config/wordpress.ini <<'INI'
+; Увеличенные лимиты для WordPress
+file_uploads = On
+memory_limit = 512M
+upload_max_filesize = 128M
+post_max_size = 128M
+max_execution_time = 600
+max_input_time = 600
+max_input_vars = 5000
+max_file_uploads = 30
+
+; Оптимизация производительности
+opcache.enable = 1
+opcache.memory_consumption = 256
+opcache.interned_strings_buffer = 8
+opcache.max_accelerated_files = 10000
+opcache.revalidate_freq = 2
+opcache.fast_shutdown = 1
+
+; Безопасность
+expose_php = Off
+allow_url_fopen = Off
+disable_functions = exec,passthru,shell_exec,system,proc_open,popen
+
+; Логирование ошибок
+log_errors = On
+error_log = /var/log/php_errors.log
+error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+
+; Настройки сессий
+session.cookie_httponly = 1
+session.use_strict_mode = 1
+session.cookie_samesite = Strict
+
+; Дополнительные параметры для WordPress
+max_input_nesting_level = 64
+pcntl_async_signals = Off
+INI
+echo -e "${GREEN}[✓]${NC} Улучшенная конфигурация PHP создана"
 
 
 # Генерация паролей
@@ -292,7 +338,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.webhook.rule=Host(\`${N8N_DOMAIN}\`) && PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.webhook.rule=Host(`${N8N_DOMAIN}`) && PathPrefix(`/webhook`)"
       - "traefik.http.routers.webhook.entrypoints=websecure"
       - "traefik.http.routers.webhook.tls=true"
       - "traefik.http.routers.webhook.tls.certresolver=letsencrypt"
@@ -428,7 +474,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n1.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n1.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
       - "traefik.http.routers.n8n1.entrypoints=websecure"
       - "traefik.http.routers.n8n1.tls=true"
       - "traefik.http.routers.n8n1.tls.certresolver=letsencrypt"
@@ -476,7 +522,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n2.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n2.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
       - "traefik.http.routers.n8n2.entrypoints=websecure"
       - "traefik.http.routers.n8n2.tls=true"
       - "traefik.http.routers.n8n2.tls.certresolver=letsencrypt"
@@ -524,7 +570,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.n8n3.rule=Host(\`${N8N_DOMAIN}\`) && !PathPrefix(\`/webhook\`)"
+      - "traefik.http.routers.n8n3.rule=Host(`${N8N_DOMAIN}`) && !PathPrefix(`/webhook`)"
       - "traefik.http.routers.n8n3.entrypoints=websecure"
       - "traefik.http.routers.n8n3.tls=true"
       - "traefik.http.routers.n8n3.tls.certresolver=letsencrypt"
@@ -545,9 +591,20 @@ services:
       WORDPRESS_DB_USER: ${MARIADB_USER}
       WORDPRESS_DB_PASSWORD: ${MARIADB_PASSWORD}
       WORDPRESS_DB_NAME: ${MARIADB_DATABASE}
+      # Дополнительные переменные для WordPress
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_MEMORY_LIMIT', '512M');
+        define('WP_MAX_MEMORY_LIMIT', '512M');
+        define('WP_DEBUG', false);
+        define('WP_DEBUG_LOG', false);
+        define('WP_DEBUG_DISPLAY', false);
+        define('DISALLOW_FILE_EDIT', true);
+        define('DISALLOW_FILE_MODS', true);
+        define('WP_AUTO_UPDATE_CORE', false);
     volumes:
       - ./volumes/wordpress:/var/www/html
-      - ./php-config/wordpress.ini:/usr/local/etc/php/conf.d/wordpress.ini
+      - ./php-config/wordpress.ini:/usr/local/etc/php/conf.d/wordpress.ini:ro
+      - ./logs/php:/var/log/php
     networks:
       - internal
       - proxy
@@ -557,7 +614,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.wordpress.rule=Host(\`${WORDPRESS_DOMAIN}\`)"
+      - "traefik.http.routers.wordpress.rule=Host(`${WORDPRESS_DOMAIN}`)"
       - "traefik.http.routers.wordpress.entrypoints=websecure"
       - "traefik.http.routers.wordpress.tls=true"
       - "traefik.http.routers.wordpress.tls.certresolver=letsencrypt"
@@ -589,7 +646,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.phpmyadmin.rule=Host(\`${PMA_DOMAIN}\`)"
+      - "traefik.http.routers.phpmyadmin.rule=Host(`${PMA_DOMAIN}`)"
       - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
       - "traefik.http.routers.phpmyadmin.tls=true"
       - "traefik.http.routers.phpmyadmin.tls.certresolver=letsencrypt"
