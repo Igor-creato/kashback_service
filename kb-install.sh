@@ -235,7 +235,6 @@ DB_ROOT_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 DB_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 PG_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 N8N_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
-GALERA_CLUSTER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 PMA_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 echo -e "${GREEN}[✓]${NC} Пароли сгенерированы"
 
@@ -246,8 +245,6 @@ MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
 MARIADB_USER=wordpress
 MARIADB_PASSWORD=${DB_USER_PASSWORD}
 MARIADB_DATABASE=wordpress
-GALERA_CLUSTER_NAME=kb_cluster
-GALERA_MARIABACKUP_PASSWORD=${GALERA_CLUSTER_PASSWORD}
 
 POSTGRES_USER=n8n
 POSTGRES_PASSWORD=${PG_PASSWORD}
@@ -425,54 +422,46 @@ services:
       start_period: 30s
 
   mariadb1:
-    image: bitnami/mariadb-galera:10.6
+    image: mariadb:10.6
     container_name: kb_mariadb1
     restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
     environment:
-      MARIADB_GALERA_CLUSTER_NAME: kb_cluster
-      MARIADB_GALERA_CLUSTER_ADDRESS: gcomm://mariadb1,mariadb2
-      MARIADB_GALERA_NODE_NAME: mariadb1
-      MARIADB_GALERA_NODE_ADDRESS: mariadb1
-      MARIADB_GALERA_MARIABACKUP_USER: mariabackup
-      MARIADB_GALERA_MARIABACKUP_PASSWORD: ${GALERA_MARIABACKUP_PASSWORD}
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MARIADB_USER: ${MARIADB_USER}
       MARIADB_PASSWORD: ${MARIADB_PASSWORD}
       MARIADB_DATABASE: ${MARIADB_DATABASE}
     volumes:
-      - ./volumes/mariadb1:/bitnami/mariadb
+      - ./volumes/mariadb1:/var/lib/mysql
       - ./config/sql/webhook-unique-constraint.sql:/docker-entrypoint-initdb.d/webhook-unique-constraint.sql
     networks:
       - internal
     healthcheck:
-      test: ['CMD', '/opt/bitnami/scripts/mariadb-galera/healthcheck.sh']
+      test: ['CMD', 'mariadb-admin', 'ping', '-h', 'localhost', '--password=${MARIADB_ROOT_PASSWORD}']
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
 
   mariadb2:
-    image: bitnami/mariadb-galera:10.6
+    image: mariadb:10.6
     container_name: kb_mariadb2
     restart: unless-stopped
+    command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
     environment:
-      MARIADB_GALERA_CLUSTER_NAME: kb_cluster
-      MARIADB_GALERA_CLUSTER_ADDRESS: gcomm://mariadb1,mariadb2
-      MARIADB_GALERA_NODE_NAME: mariadb2
-      MARIADB_GALERA_NODE_ADDRESS: mariadb2
-      MARIADB_GALERA_MARIABACKUP_USER: mariabackup
-      MARIADB_GALERA_MARIABACKUP_PASSWORD: ${GALERA_MARIABACKUP_PASSWORD}
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_GALERA_CLUSTER_BOOTSTRAP: 'no'
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
     volumes:
-      - ./volumes/mariadb2:/bitnami/mariadb
+      - ./volumes/mariadb2:/var/lib/mysql
     networks:
       - internal
     depends_on:
       mariadb1:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', '/opt/bitnami/scripts/mariadb-galera/healthcheck.sh']
+      test: ['CMD', 'mariadb-admin', 'ping', '-h', 'localhost', '--password=${MARIADB_ROOT_PASSWORD}']
       interval: 30s
       timeout: 10s
       retries: 5
