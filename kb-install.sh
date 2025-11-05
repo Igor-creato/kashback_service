@@ -422,7 +422,7 @@ services:
       start_period: 30s
 
   mariadb1:
-    image: mariadb:10.6
+    image: mariadb:11.8
     container_name: kb_mariadb1
     restart: unless-stopped
     command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
@@ -444,7 +444,7 @@ services:
       start_period: 60s
 
   mariadb2:
-    image: mariadb:10.6
+    image: mariadb:11.8
     container_name: kb_mariadb2
     restart: unless-stopped
     command: --transaction-isolation=READ-COMMITTED --log-bin=binlog --binlog-format=ROW
@@ -502,7 +502,7 @@ services:
       retries: 5
 
   n8n1:
-    image: n8nio/n8n:1.45.0
+    image: n8nio/n8n:latest
     container_name: kb_n8n1
     restart: unless-stopped
     environment:
@@ -550,7 +550,7 @@ services:
       start_period: 60s
 
   n8n2:
-    image: n8nio/n8n:1.45.0
+    image: n8nio/n8n:latest
     container_name: kb_n8n2
     restart: unless-stopped
     environment:
@@ -598,7 +598,7 @@ services:
       start_period: 60s
 
   n8n3:
-    image: n8nio/n8n:1.45.0
+    image: n8nio/n8n:latest
     container_name: kb_n8n3
     restart: unless-stopped
     environment:
@@ -646,7 +646,7 @@ services:
       start_period: 60s
 
   wordpress:
-    image: wordpress:6.6-fpm-alpine
+    image: wordpress:php8.4-apache
     container_name: kb_wordpress
     restart: unless-stopped
     environment:
@@ -690,7 +690,7 @@ services:
       start_period: 60s
 
   phpmyadmin:
-    image: phpmyadmin:5.2.1-apache
+    image: phpmyadmin:latest
     container_name: kb_phpmyadmin
     restart: "no"
     profiles:
