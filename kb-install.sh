@@ -55,24 +55,46 @@ else
     echo -e "${BLUE}Введите домены:${NC}"
     echo ""
 
-    echo -n "WordPress домен (например site.example.com): "
-    read -r WORDPRESS_DOMAIN
+    while [ -z "$WORDPRESS_DOMAIN" ]; do
+        echo -n "WordPress домен (например site.example.com): "
+        read -r WORDPRESS_DOMAIN
+        if [ -z "$WORDPRESS_DOMAIN" ]; then
+            echo -e "${RED}Домен не может быть пустым!${NC}"
+        fi
+    done
 
-    echo -n "n8n домен (например n8n.example.com): "
-    read -r N8N_DOMAIN
+    while [ -z "$N8N_DOMAIN" ]; do
+        echo -n "n8n домен (например n8n.example.com): "
+        read -r N8N_DOMAIN
+        if [ -z "$N8N_DOMAIN" ]; then
+            echo -e "${RED}Домен не может быть пустым!${NC}"
+        fi
+    done
 
-    echo -n "phpMyAdmin домен (например pma.example.com): "
-    read -r PMA_DOMAIN
-fi
-
-# Проверка что домены не пустые
-if [ -z "$WORDPRESS_DOMAIN" ] || [ -z "$N8N_DOMAIN" ] || [ -z "$PMA_DOMAIN" ]; then
-    echo -e "${RED}[✗]${NC} Ошибка: все домены должны быть заполнены!"
-    exit 1
+    while [ -z "$PMA_DOMAIN" ]; do
+        echo -n "phpMyAdmin домен (например pma.example.com): "
+        read -r PMA_DOMAIN
+        if [ -z "$PMA_DOMAIN" ]; then
+            echo -e "${RED}Домен не может быть пустым!${NC}"
+        fi
+    done
 fi
 
 echo -e "${GREEN}[✓]${NC} Домены сохранены"
 echo ""
+mkdir -p php-config
+cat > php-config/wordpress.ini <<'INI'
+file_uploads = On
+memory_limit = 256M
+upload_max_filesize = 64M
+post_max_size = 64M
+max_execution_time = 300
+max_input_vars = 3000
+max_file_uploads = 20
+INI
+
+echo -e "${GREEN}[✓]${NC} Конфигурация PHP создана"
+
 
 # Создание папки
 echo -e "${BLUE}[ℹ]${NC} Создание структуры..."
@@ -84,6 +106,7 @@ mkdir -p volumes/n8n1 volumes/n8n2 volumes/n8n3 volumes/wordpress
 mkdir -p config/sql
 
 echo -e "${GREEN}[✓]${NC} Структура создана"
+
 
 # Генерация паролей
 echo -e "${BLUE}[ℹ]${NC} Генерация паролей..."
@@ -524,6 +547,7 @@ services:
       WORDPRESS_DB_NAME: ${MARIADB_DATABASE}
     volumes:
       - ./volumes/wordpress:/var/www/html
+      - ./php-config/wordpress.ini:/usr/local/etc/php/conf.d/wordpress.ini
     networks:
       - internal
       - proxy
