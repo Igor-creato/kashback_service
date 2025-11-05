@@ -45,6 +45,25 @@ echo -e "${GREEN}[✓]${NC} Traefik найден"
 
 echo ""
 
+# Проверка, запущен ли скрипт через pipe (curl | bash)
+if [ ! -t 0 ]; then
+    # Скрипт запущен через pipe, завершаем с инструкциями
+    echo -e "${RED}[✗]${NC} Скрипт запущен через pipe, интерактивный ввод невозможен!"
+    echo ""
+    echo -e "${YELLOW}Для установки используйте один из следующих способов:${NC}"
+    echo ""
+    echo -e "${YELLOW}1. Установка через переменные окружения:${NC}"
+    echo "   ${BLUE}WORDPRESS_DOMAIN=site.example.com N8N_DOMAIN=n8n.example.com PMA_DOMAIN=pma.example.com curl -sSL https://raw.githubusercontent.com/Igor-creato/kashback_service/main/kb-install.sh | bash${NC}"
+    echo ""
+    echo -e "${YELLOW}2. Установка через аргументы:${NC}"
+    echo "   ${BLUE}curl -sSL https://raw.githubusercontent.com/Igor-creato/kashback_service/main/kb-install.sh -o kb-install.sh && chmod +x kb-install.sh && ./kb-install.sh site.example.com n8n.example.com pma.example.com${NC}"
+    echo ""
+    echo -e "${YELLOW}3. Скачать и запустить:${NC}"
+    echo "   ${BLUE}curl -sSL https://raw.githubusercontent.com/Igor-creato/kashback_service/main/kb-install.sh -o kb-install.sh && chmod +x kb-install.sh && WORDPRESS_DOMAIN=site.example.com N8N_DOMAIN=n8n.example.com PMA_DOMAIN=pma.example.com ./kb-install.sh${NC}"
+    echo ""
+    exit 1
+fi
+
 # Получение доменов из аргументов или интерактивно
 if [ $# -eq 3 ]; then
     WORDPRESS_DOMAIN=$1
@@ -52,49 +71,36 @@ if [ $# -eq 3 ]; then
     PMA_DOMAIN=$3
     echo -e "${GREEN}[✓]${NC} Домены получены из аргументов"
 else
-    echo -e "${BLUE}Введите домены:${NC}"
-    echo ""
-
-    # Функция для безопасного ввода домена с поддержкой curl | bash
-    input_domain() {
-        local prompt="$1"
-        local var_name="$2"
-        local value=""
-        
-        while [ -z "$value" ]; do
-            echo -n "$prompt"
-            # Проверяем, запущен ли скрипт через pipe
-            if [ -t 0 ]; then
-                # Прямой запуск терминала
-                read -t 60 -r value 2>/dev/null
-            else
-                # Запуск через pipe, используем /dev/tty
-                read -t 60 -r value < /dev/tty 2>/dev/null
-            fi
-            
-            if [ $? -eq 0 ] && [ -n "$value" ]; then
-                # Удаляем пробелы в начале и конце
-                value=$(echo "$value" | xargs)
-                # Проверяем что значение не пустое
-                if [ -z "$value" ]; then
-                    echo -e "${RED}[✗]${NC} Значение не может быть пустым. Попробуйте снова."
-                fi
-            else
-                echo -e "${RED}[✗]${NC} Ошибка ввода или таймаут. Попробуйте снова."
-                value=""
-            fi
-        done
-        
-        eval "$var_name=\"$value\""
-    }
-
-    # Альтернативный метод через переменные окружения
+    # Проверяем переменные окружения
     if [ -z "$WORDPRESS_DOMAIN" ] || [ -z "$N8N_DOMAIN" ] || [ -z "$PMA_DOMAIN" ]; then
-        echo -e "${BLUE}[ℹ]${NC} Вы можете установить домены через переменные окружения:"
-        echo -e "${YELLOW}WORDPRESS_DOMAIN${NC}=site.example.com ${YELLOW}N8N_DOMAIN${NC}=n8n.example.com ${YELLOW}PMA_DOMAIN${NC}=pma.example.com kb-install.sh"
+        echo -e "${BLUE}Введите домены:${NC}"
         echo ""
-        echo -e "${BLUE}Введите домены интерактивно:${NC}"
-        echo ""
+
+        # Функция для безопасного ввода домена
+        input_domain() {
+            local prompt="$1"
+            local var_name="$2"
+            local value=""
+            
+            while [ -z "$value" ]; do
+                echo -n "$prompt"
+                read -t 60 -r value 2>/dev/null
+                
+                if [ $? -eq 0 ] && [ -n "$value" ]; then
+                    # Удаляем пробелы в начале и конце
+                    value=$(echo "$value" | xargs)
+                    # Проверяем что значение не пустое
+                    if [ -z "$value" ]; then
+                        echo -e "${RED}[✗]${NC} Значение не может быть пустым. Попробуйте снова."
+                    fi
+                else
+                    echo -e "${RED}[✗]${NC} Ошибка ввода или таймаут. Попробуйте снова."
+                    value=""
+                fi
+            done
+            
+            eval "$var_name=\"$value\""
+        }
 
         input_domain "WordPress домен (например site.example.com): " "WORDPRESS_DOMAIN"
         input_domain "n8n домен (например n8n.example.com): " "N8N_DOMAIN"
