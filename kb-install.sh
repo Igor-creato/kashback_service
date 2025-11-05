@@ -129,6 +129,55 @@ echo ""
 
 # Создание папки
 echo -e "${BLUE}[ℹ]${NC} Создание структуры..."
+
+# Проверяем, существует ли директория kb
+if [ -d "kb" ]; then
+    echo -e "${YELLOW}[⚠]${NC} Директория kb уже существует"
+    echo -n "Пересоздать конфигурацию? (y/N): "
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        echo -e "${BLUE}[ℹ]${NC} Удаление старой конфигурации..."
+        rm -rf kb
+    else
+        echo -e "${YELLOW}[ℹ]${NC} Использование существующей конфигурации"
+        cd kb || exit 1
+        # Проверяем, нужно ли обновить конфигурацию
+        if [ -f "docker-compose.yml" ]; then
+            echo -e "${YELLOW}[⚠]${NC} Обнаружен старый docker-compose.yml"
+            echo -n "Обновить конфигурацию Docker Compose? (y/N): "
+            read -r update_response
+            if [[ "$update_response" =~ ^[Yy]$ ]]; then
+                echo -e "${BLUE}[ℹ]${NC} Обновление конфигурации..."
+            else
+                echo -e "${GREEN}[✓]${NC} Использование существующей конфигурации Docker Compose"
+                # Выводим информацию о системе с текущими доменами
+                if [ -f ".env" ]; then
+                    source .env
+                    echo ""
+                    echo -e "${YELLOW}Ваша система:${NC}"
+                    echo "  WordPress:  https://${WORDPRESS_DOMAIN}"
+                    echo "  n8n:        https://${N8N_DOMAIN}"
+                    echo "  phpMyAdmin: https://${PMA_DOMAIN}"
+                    echo ""
+                    echo -e "${BLUE}Запуск контейнеров...${NC}"
+                    docker compose up -d
+                    sleep 3
+                    echo ""
+                    docker compose ps
+                    echo ""
+                    echo -e "${BLUE}Вебхуки:${NC}"
+                    echo "  POST: curl -X POST https://${N8N_DOMAIN}/webhook/test -d '{key:value}'"
+                    echo " GET: curl https://${N8N_DOMAIN}/webhook/test?key=value"
+                    echo ""
+                    echo -e "${BLUE}Управление: ./manage.sh${NC}"
+                    echo ""
+                    exit 0
+                fi
+            fi
+        fi
+    fi
+fi
+
 mkdir -p kb
 cd kb || exit 1
 
