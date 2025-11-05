@@ -118,7 +118,7 @@ fi
 
 # Дополнительная проверка формата доменов
 for domain in "$WORDPRESS_DOMAIN" "$N8N_DOMAIN" "$PMA_DOMAIN"; do
-    if ! echo "$domain" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}$'; then
+    if ! echo "$domain" | grep -qE '^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'; then
         echo -e "${RED}[✗]${NC} Неверный формат домена: $domain"
         exit 1
     fi
